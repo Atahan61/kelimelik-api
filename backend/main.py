@@ -1,105 +1,89 @@
-from fastapi import FastAPI, File, UploadFile
-from contextlib import asynccontextmanager
-import shutil
+# main.py (GÜNCELLENMİŞ VERSİYON)
+from fastapi import FastAPI, File, UploadFile, Form
+from fastapi.middleware.cors import CORSMiddleware
+import cv2
+import numpy as np
+from tahta_v11_final import tahtayi_oku, eldeki_harfleri_oku  # Fonksiyonları içe aktar
+from solver import KelimelikSolver
 import os
 
-# --- BİZİM YENİ GÖZLERİMİZ ---
-from tahta_v11_final import tahtayi_oku_final
-from el_okuyucu_v2 import eli_oku
+app = FastAPI()
 
-# --- BEYİN ---
-from solver import motor 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# --- YENİ BAŞLANGIÇ SİSTEMİ (LIFESPAN) ---
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Uygulama başlarken çalışacak kodlar
-    print("\n🚀 KELİMELİK BOTU BAŞLATILIYOR...")
-    
-    if os.path.exists("dictionary.txt"):
-        motor.veriyi_yukle("dictionary.txt")
-    elif os.path.exists("kelimeler.txt"):
-        motor.veriyi_yukle("kelimeler.txt")
-    else:
-        print("⚠️ UYARI: Sözlük dosyası bulunamadı! (kelimeler.txt veya dictionary.txt)")
-    
-    yield # Uygulama burada çalışmaya devam eder
-    
-    # Uygulama kapanırken çalışacak kodlar (Gerekirse buraya eklenir)
-    print("🛑 Sistem kapatılıyor...")
+# Solver'ı başlat (Kelimeler yüklenir)
+solver = KelimelikSolver()
 
-# Uygulamayı lifespan ile başlatıyoruz
-app = FastAPI(lifespan=lifespan)
+# --- YARDIMCI FONKSİYON: Resmi Hazırla ---
+async def resmi_isle(file: UploadFile):
+    contents = await file.read()
+    nparr = np.frombuffer(contents, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    return img
+
+# --- YENİ ENDPOINT 1: Sadece Eldeki Harfleri Oku ---
+@app.post("/eli-oku")
+async def eli_oku_endpoint(file: UploadFile = File(...)):
+    """
+    Resmi alır, sadece eldeki harfleri okur ve string olarak döner.
+    Örn: "A*BCEŞ"
+    """
+    try:
+        img = await resmi_isle(file)
+        # Sadece el okuma fonksiyonunu çağır
+        el_harfleri_str = eldeki_harfleri_oku(img)
+        return {"durum": "basarili", "el": el_harfleri_str}
+    except Exception as e:
+        return {"durum": "hata", "mesaj": str(e)}
+
+
+# --- GÜNCELLENMİŞ ENDPOINT 2: Çözüm ---
+@app.post("/resim-coz")
+async def coz(
+    file: UploadFile = File(...),
+    manuel_el: str = Form(None) # <-- YENİ: İsteğe bağlı manuel el bilgisi
+):
+    try:
+        print("1. Resim alınıyor...")
+        img = await resmi_isle(file)
+
+        print("2. Tahta (OCR) okunuyor...")
+        tahta_matrisi, _ = tahtayi_oku(img) # Artık tahtayi_oku'dan sadece matrisi alıyoruz
+
+        # --- KRİTİK DEĞİŞİKLİK BURADA ---
+        if manuel_el and manuel_el.strip() != "":
+             # Eğer Flutter'dan manuel bir el bilgisi geldiyse, OCR yapma, onu kullan.
+             print(f"3. Manuel el bilgisi kullanılacak: {manuel_el}")
+             el_harfleri = manuel_el.strip()
+        else:
+             # Manuel bilgi yoksa, eski usul OCR ile kendin bul.
+             print("3. Eldeki harfler (OCR) okunuyor...")
+             el_harfleri = eldeki_harfleri_oku(img)
+             print(f"   OCR Sonucu: {el_harfleri}")
+        # --------------------------------
+
+        print("4. Çözücü çalışıyor...")
+        en_iyi_hamle, puan = solver.en_iyi_hamleyi_bul(tahta_matrisi, el_harfleri)
+
+        if en_iyi_hamle:
+            print(f"5. Çözüm bulundu: {en_iyi_hamle['kelime']} - {puan} Puan")
+            return {"durum": "basarili", "hamle": en_iyi_hamle}
+        else:
+            print("5. Hamle bulunamadı.")
+            return {"durum": "hamle_yok"}
+
+    except Exception as e:
+        print(f"HATA OLUŞTU: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"durum": "hata", "mesaj": str(e)}
 
 @app.get("/")
 def read_root():
-    return {"durum": "Hazır", "versiyon": "v2.1 (Lifespan)"}
-
-def harfi_temizle(ham_harf):
-    """ 'd2', 's_el' gibi isimleri 'd', 's' haline getirir. """
-    temiz = ""
-    if ham_harf == "?" or ham_harf is None:
-        return "?"
-    
-    for karakter in ham_harf:
-        if karakter.isalpha() or karakter == "*": 
-            temiz += karakter
-            
-    return temiz.lower()
-
-@app.post("/resim-coz")
-async def resim_coz(file: UploadFile = File(...)):
-    # 1. Gelen resmi kaydet
-    temp_dosya = "temp.jpg"
-    with open(temp_dosya, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    
-    print(f"\n--- YENİ İSTEK GELDİ: {file.filename} ---")
-
-    # 2. TAHTAYI OKU
-    raw_tahta = tahtayi_oku_final(temp_dosya)
-    
-    # Matrisi temizle
-    tahta_matris = []
-    for satir in raw_tahta:
-        yeni_satir = []
-        for hucre in satir:
-            if hucre and hucre != "?":
-                yeni_satir.append(harfi_temizle(hucre))
-            else:
-                yeni_satir.append(None)
-        tahta_matris.append(yeni_satir)
-
-    # 3. ELİ OKU
-    raw_el = eli_oku(temp_dosya)
-    el_harfleri = [harfi_temizle(h) for h in raw_el]
-    
-    print(f"Tahta Okundu. El: {el_harfleri}")
-
-    # 4. SOLVER (ÇÖZÜCÜ) ÇAĞIR
-    print("🧠 Solver düşünmeye başladı...")
-    bulunanlar = []
-    
-    # Hata olmaması için kontrol
-    try:
-        if hasattr(motor, "hamle_bul"):
-            bulunanlar = motor.hamle_bul(tahta_matris, el_harfleri)
-        else:
-            print("HATA: motor.hamle_bul fonksiyonu bulunamadı!")
-    except Exception as e:
-        print(f"Solver Hatası: {e}")
-
-    # En iyi hamleleri terminale de yazalım
-    if bulunanlar:
-        print(f"\n🏆 EN İYİ HAMLELER:")
-        for i, hamle in enumerate(bulunanlar[:5]):
-            print(f"{i+1}. {hamle['kelime'].upper()} ({hamle['puan']} P) -> {hamle['yon']} {hamle['baslangic']}")
-    else:
-        print("❌ Hiç hamle bulunamadı.")
-
-    # 5. SONUCU DÖNDÜR
-    return {
-        "el_harfleri": el_harfleri,
-        "tahta_durumu": tahta_matris, 
-        "onerilen_kelimeler": bulunanlar[:20] 
-    }
+    return {"durum": "Hazır", "versiyon": "v3.0 (Manuel Düzeltme)"}
