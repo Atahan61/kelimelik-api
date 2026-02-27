@@ -3,37 +3,26 @@ from fastapi.middleware.cors import CORSMiddleware
 import cv2
 import numpy as np
 
-# Orijinal dosyandan tahtayı okuyan fonksiyonu ve yardımcıları alıyoruz.
 from tahta_v11_final import tahtayi_oku, referanslari_yukle, en_iyi_eslesmeyi_bul
 from solver import motor 
 
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"]
-)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 def eldeki_harfleri_oku_guvenli(img):
-    """
-    Orijinal tahta okuyucu dosyanı bozmamak için, laboratuvar testleriyle 
-    kanıtladığımız SARI RENK ve %25 KESİM ayarlı özel el okuyucu.
-    """
     referanslar = referanslari_yukle()
     if not referanslar: return ""
 
     h, w, _ = img.shape
-    
-    # KESİM DÜZELTMESİ: Alt %25'lik alanı alıyoruz (Uzun ekranlı telefonlar için)
     y_bas = int(h * 0.75)
     el_resmi = img[y_bas:h, 0:w]
-    
     eh, ew, _ = el_resmi.shape
     slot_w = ew / 7.0 
 
     okunan_harfler = ""
     tr_harita = {"oz": "ö", "ch": "ç", "sh": "ş", "ue": "ü", "gh": "ğ", "iu": "ı", "i": "i", "joker": "*", "yildiz": "*"}
 
-    # RENK DÜZELTMESİ: Beyaz değil, SARI/AHŞAP rengini arıyoruz!
     alt_sinir = np.array([9, 75, 0])
     ust_sinir = np.array([179, 255, 252])
 
@@ -48,7 +37,6 @@ def eldeki_harfleri_oku_guvenli(img):
         hsv = cv2.cvtColor(hucre, cv2.COLOR_BGR2HSV)
         maske = cv2.inRange(hsv, alt_sinir, ust_sinir)
         
-        # Eğer karede sarı piksel varsa taşı oku
         if cv2.countNonZero(maske) > (hucre.size * 0.05):
             harf, skor = en_iyi_eslesmeyi_bul(hucre, referanslar)
             if harf != "?":
@@ -58,7 +46,6 @@ def eldeki_harfleri_oku_guvenli(img):
     
     return okunan_harfler
 
-
 @app.post("/resim-coz")
 async def coz(file: UploadFile = File(...)):
     try:
@@ -66,42 +53,31 @@ async def coz(file: UploadFile = File(...)):
         nparr = np.frombuffer(contents, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
-        # 1. Tahtayı Orijinal Dosyanla Oku
         tahta_matrisi, _ = tahtayi_oku(img)
         
-        # 2. Eli Yeni Güvenli Fonksiyonumuzla Oku
+        # 1. HATA İHTİMALİ: Tahta Okunamadı
+        if not tahta_matrisi or len(tahta_matrisi) == 0:
+            return {"durum": "basarili", "onerilen_kelimeler": [{"kelime": "TAHTABOS", "puan": 0, "baslangic": [7,7], "yon": "Yatay", "jokerler": []}], "el_harfleri": ["H","A","T","A"]}
+
         el_harfleri_str = eldeki_harfleri_oku_guvenli(img)
 
-        # Eğer harf okuyamadıysa boş dön
+        # 2. HATA İHTİMALİ: El Okunamadı
         if not el_harfleri_str:
-            return {
-                "durum": "hamle_yok", 
-                "onerilen_kelimeler": [], 
-                "el_harfleri": []
-            }
+            return {"durum": "basarili", "onerilen_kelimeler": [{"kelime": "ELBOMBOS", "puan": 0, "baslangic": [7,7], "yon": "Yatay", "jokerler": []}], "el_harfleri": ["H","A","T","A"]}
 
-        # 3. Motoru Çalıştır
         el_temiz = el_harfleri_str.lower().replace(" ", "")
         hamleler = motor.hamle_bul(tahta_matrisi, el_temiz)
 
-        # Eğer motor kelime bulamazsa boş dön
+        # 3. HATA İHTİMALİ: Çözücü Kelime Bulamadı
         if not hamleler:
-            return {
-                "durum": "hamle_yok", 
-                "onerilen_kelimeler": [], 
-                "el_harfleri": list(el_harfleri_str)
-            }
+            return {"durum": "basarili", "onerilen_kelimeler": [{"kelime": "HAMLEYOK", "puan": 0, "baslangic": [7,7], "yon": "Yatay", "jokerler": []}], "el_harfleri": list(el_harfleri_str)}
 
-        # 4. Başarılı Sonuçları Gönder
-        return {
-            "durum": "basarili",
-            "onerilen_kelimeler": hamleler[:30], 
-            "el_harfleri": list(el_harfleri_str)
-        }
+        return {"durum": "basarili", "onerilen_kelimeler": hamleler[:30], "el_harfleri": list(el_harfleri_str)}
 
     except Exception as e:
-        return {"durum": "hata", "mesaj": str(e)}
+        # 4. HATA İHTİMALİ: Python Kodu Çöktü
+        return {"durum": "basarili", "onerilen_kelimeler": [{"kelime": "COKTU", "puan": 999, "baslangic": [7,7], "yon": "Yatay", "jokerler": []}], "el_harfleri": ["H","A","T","A"]}
 
 @app.get("/")
 def read_root():
-    return {"durum": "Hazır", "versiyon": "v1.5 (Guvenli Okuyucu)"}
+    return {"durum": "Hazır"}
