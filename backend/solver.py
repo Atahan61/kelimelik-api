@@ -387,26 +387,34 @@ class KelimeAgaci:
             
         return toplam_puan
 
-# --- ORİJİNAL MOTOR BAŞLATMA ---
+import os
+
+# Orijinal motoru başlat
 motor = KelimeAgaci()
 
-# Sözlük dosyasını otomatik bul ve garanti altına al
-import os
-_aranan_sozlukler = ["sozluk.txt", "kelimeler.txt", "turkce_kelimeler.txt"]
-_sozluk_yuklendi = False
+# GPS gibi bu dosyanın (solver.py) çalıştığı klasörü tam olarak bulur
+mevcut_klasor = os.path.dirname(os.path.abspath(__file__))
 
-# Render'da klasör yapıları değişebileceği için tüm ihtimalleri tarıyoruz
-for klasor in ["", "backend/", "../"]:
-    for dosya in _aranan_sozlukler:
-        yol = os.path.join(klasor, dosya)
-        if os.path.exists(yol):
-            print(f"Sözlük bulundu: {yol}")
-            basari = motor.veriyi_yukle(yol)
-            if basari:
-                _sozluk_yuklendi = True
-                break
-    if _sozluk_yuklendi:
+# İŞTE KİLİT NOKTA: Senin dosyanın adı (dictionary.txt) en başa eklendi!
+aranan_sozlukler = ["dictionary.txt", "sozluk.txt", "kelimeler.txt", "turkce_kelimeler.txt"]
+sozluk_bulundu = False
+
+# Önce aynı klasörde ara
+for dosya in aranan_sozlukler:
+    tam_yol = os.path.join(mevcut_klasor, dosya)
+    if os.path.exists(tam_yol):
+        print(f"Sözlük bulundu ve yükleniyor: {tam_yol}")
+        motor.veriyi_yukle(tam_yol)
+        sozluk_bulundu = True
         break
 
-if not _sozluk_yuklendi:
-    print("!!! KRİTİK HATA: SÖZLÜK DOSYASI BULUNAMADI, KELİME ÜRETİLEMEZ !!!")
+# Eğer aynı klasörde yoksa, bir üst klasörde (ana dizinde) ara
+if not sozluk_bulundu:
+    ust_klasor = os.path.dirname(mevcut_klasor)
+    for dosya in aranan_sozlukler:
+        tam_yol = os.path.join(ust_klasor, dosya)
+        if os.path.exists(tam_yol):
+            print(f"Sözlük üst klasörde bulundu: {tam_yol}")
+            motor.veriyi_yukle(tam_yol)
+            sozluk_bulundu = True
+            break
