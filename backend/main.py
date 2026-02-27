@@ -1,55 +1,41 @@
-from fastapi import FastAPI, File, UploadFile, Form
+from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import cv2
 import numpy as np
-from tahta_v11_final import tahtayi_oku, eldeki_harfleri_oku 
+from tahta_v11_final import tahtayi_oku, eldeki_harfleri_oku
 from solver import KelimelikSolver
-import os
 
 app = FastAPI()
 
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"]
 )
 
 solver = KelimelikSolver()
 
-async def resmi_isle(file: UploadFile):
-    contents = await file.read()
-    nparr = np.frombuffer(contents, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    return img
-
 @app.post("/resim-coz")
-async def coz(
-    file: UploadFile = File(...),
-    manuel_el: str = Form(None)
-):
+async def coz(file: UploadFile = File(...)):
     try:
-        img = await resmi_isle(file)
+        contents = await file.read()
+        nparr = np.frombuffer(contents, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        # 1. Tahtayı ve Harfleri Oku
         tahta_matrisi, _ = tahtayi_oku(img)
+        el_harfleri_str = eldeki_harfleri_oku(img)
 
-        # Manuel giriş varsa onu kullan, yoksa kendin oku
-        if manuel_el and manuel_el.strip() != "":
-             el_harfleri = manuel_el.strip()
-        else:
-             el_harfleri = eldeki_harfleri_oku(img)
+        # 2. Motoru çalıştır ve TÜM hamleleri bul
+        hamleler = solver.motor.hamle_bul(tahta_matrisi, el_harfleri_str.lower().replace(" ", ""))
 
-        en_iyi_hamle, puan = solver.en_iyi_hamleyi_bul(tahta_matrisi, el_harfleri)
-
-        if en_iyi_hamle:
-            # DİKKAT: Artık okunan el_harfleri de telefona gönderiliyor!
-            return {"durum": "basarili", "hamle": en_iyi_hamle, "el_harfleri": el_harfleri}
-        else:
-            return {"durum": "hamle_yok", "el_harfleri": el_harfleri}
-
+        # 3. Eski formatta (Liste olarak) geri döndür
+        return {
+            "durum": "basarili",
+            "onerilen_kelimeler": hamleler[:30], # İlk 30 hamleyi gönderir
+            "el_harfleri": list(el_harfleri_str) # Flutter tarafı liste bekliyor
+        }
     except Exception as e:
         return {"durum": "hata", "mesaj": str(e)}
 
 @app.get("/")
 def read_root():
-    return {"durum": "Hazır", "versiyon": "v4.0 (Akıllı Düzeltme)"}
+    return {"durum": "Hazır", "versiyon": "v1.0 (Eski Kararlı Sürüm)"}
