@@ -387,34 +387,5 @@ class KelimeAgaci:
             
         return toplam_puan
 
-import os
-
-# Orijinal motoru başlat
+# Motoru başlat
 motor = KelimeAgaci()
-
-# GPS gibi bu dosyanın (solver.py) çalıştığı klasörü tam olarak bulur
-mevcut_klasor = os.path.dirname(os.path.abspath(__file__))
-
-# İŞTE KİLİT NOKTA: Senin dosyanın adı (dictionary.txt) en başa eklendi!
-aranan_sozlukler = ["dictionary.txt", "sozluk.txt", "kelimeler.txt", "turkce_kelimeler.txt"]
-sozluk_bulundu = False
-
-# Önce aynı klasörde ara
-for dosya in aranan_sozlukler:
-    tam_yol = os.path.join(mevcut_klasor, dosya)
-    if os.path.exists(tam_yol):
-        print(f"Sözlük bulundu ve yükleniyor: {tam_yol}")
-        motor.veriyi_yukle(tam_yol)
-        sozluk_bulundu = True
-        break
-
-# Eğer aynı klasörde yoksa, bir üst klasörde (ana dizinde) ara
-if not sozluk_bulundu:
-    ust_klasor = os.path.dirname(mevcut_klasor)
-    for dosya in aranan_sozlukler:
-        tam_yol = os.path.join(ust_klasor, dosya)
-        if os.path.exists(tam_yol):
-            print(f"Sözlük üst klasörde bulundu: {tam_yol}")
-            motor.veriyi_yukle(tam_yol)
-            sozluk_bulundu = True
-            break
