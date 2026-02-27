@@ -9,25 +9,27 @@ app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 solver = KelimelikSolver()
 
-def ozel_el_okuyucu(img):
-    """Eldeki taşları Kelimelik'in ahşap/sarı rengine göre okur"""
+def saglam_el_okuyucu(img):
+    """Farklı ekran boyutlarındaki telefonlar için Evrensel El Okuyucu"""
     try:
         referanslar = referanslari_yukle()
         if not referanslar: return ""
 
         h, w, _ = img.shape
-        y_bas = int(h * 0.80) # Ekranın alt %20'si (Eldeki taşların olduğu yer)
+        
+        # YENİ NESİL KESİM: Sadece en alt %15 değil, alt %25'e geniş geniş bakalım
+        # Böylece uzun/kısa her telefonda eldeki taşlar bu karenin içine kesin düşer!
+        y_bas = int(h * 0.75) 
         el_resmi = img[y_bas:h, 0:w]
-
         eh, ew, _ = el_resmi.shape
         slot_w = ew / 7.0
 
         okunan = ""
         tr_harita = {"oz": "ö", "ch": "ç", "sh": "ş", "ue": "ü", "gh": "ğ", "iu": "ı", "i": "i", "joker": "*", "yildiz": "*"}
 
-        # KELİMELİK TAŞ RENGİ (Sarı/Ahşap Doğru Renk Filtresi)
-        alt_sinir = np.array([9, 75, 0])
-        ust_sinir = np.array([179, 255, 252])
+        # BAŞARILI OLAN ORİJİNAL RENK MASKESİ (Beyaz/Krem/Açık Gri)
+        alt_sinir = np.array([0, 0, 100])
+        ust_sinir = np.array([180, 50, 255])
 
         for i in range(7):
             x1 = int(i * slot_w)
@@ -46,7 +48,7 @@ def ozel_el_okuyucu(img):
 
         return okunan
     except Exception as e:
-        print("El okuma hatasi:", e)
+        print("Okuma Hatası:", e)
         return ""
 
 @app.post("/resim-coz")
@@ -59,29 +61,19 @@ async def coz(file: UploadFile = File(...)):
         # 1. Tahtayı Oku
         tahta_matrisi, _ = tahtayi_oku(img)
 
-        # 2. Eli Kendi Özel Okuyucumuzla Oku (Renk hatası düzeltildi)
-        el_harfleri_str = ozel_el_okuyucu(img)
+        # 2. Eli Kendi Yeni Okuyucumuzla Oku
+        el_harfleri_str = saglam_el_okuyucu(img)
 
-        # HATA TESPİTİ 1: El Gerçekten Boş mu Okundu?
-        if not el_harfleri_str or len(el_harfleri_str) == 0:
-             return {
-                "durum": "basarili",
-                "onerilen_kelimeler": [{"kelime": "ELBOS", "puan": 404, "baslangic": (7,5), "yon": "Yatay", "jokerler": []}],
-                "el_harfleri": ["B", "O", "Ş"]
-             }
+        if not el_harfleri_str:
+            return {"durum": "hamle_yok"} # Harf yoksa hamle de yok
 
         # 3. Motoru çalıştır
         hamleler = solver.motor.hamle_bul(tahta_matrisi, el_harfleri_str.lower().replace(" ", ""))
 
-        # HATA TESPİTİ 2: Motor mu kelime bulamadı?
-        if not hamleler or len(hamleler) == 0:
-             return {
-                "durum": "basarili",
-                "onerilen_kelimeler": [{"kelime": "KELIMEYOK", "puan": 0, "baslangic": (7,3), "yon": "Yatay", "jokerler": []}],
-                "el_harfleri": list(el_harfleri_str)
-             }
+        if not hamleler:
+            return {"durum": "hamle_yok"}
 
-        # 4. Her şey normalse gerçek sonuçları dön
+        # 4. Gerçek Sonuçları Dön
         return {
             "durum": "basarili",
             "onerilen_kelimeler": hamleler[:30],
@@ -89,13 +81,8 @@ async def coz(file: UploadFile = File(...)):
         }
 
     except Exception as e:
-        # HATA TESPİTİ 3: Sunucu Çöktü mü?
-        return {
-            "durum": "basarili",
-            "onerilen_kelimeler": [{"kelime": "COKTU", "puan": 999, "baslangic": (7,5), "yon": "Yatay", "jokerler": []}],
-            "el_harfleri": ["H", "A", "T", "A"]
-        }
+        return {"durum": "hata", "mesaj": str(e)}
 
 @app.get("/")
 def read_root():
-    return {"durum": "Hazır", "versiyon": "v1.1 (Saglam Motor)"}
+    return {"durum": "Hazır", "versiyon": "v1.2 (Evrensel Cözüm)"}
