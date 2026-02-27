@@ -387,5 +387,30 @@ class KelimeAgaci:
             
         return toplam_puan
 
-# Motoru başlat
-motor = KelimeAgaci()
+# --- API VE ÇÖZÜCÜ ARASINDAKİ KÖPRÜ ---
+class KelimelikSolver:
+    def __init__(self):
+        self.motor = KelimeAgaci()
+        # Sunucudaki sözlük dosyasını otomatik bul ve yükle
+        olasi_yollar = [
+            "sozluk.txt", "kelimeler.txt", "turkce_kelimeler.txt",
+            "backend/sozluk.txt", "backend/kelimeler.txt", "backend/turkce_kelimeler.txt"
+        ]
+        for yol in olasi_yollar:
+            if os.path.exists(yol):
+                self.motor.veriyi_yukle(yol)
+                break
+
+    def en_iyi_hamleyi_bul(self, tahta_matrisi, el_harfleri):
+        # 1. API'den gelen BÜYÜK harfleri motorun anladığı küçük harfe çevir
+        kucuk_el = turkce_kucult(el_harfleri).replace(" ", "")
+
+        # 2. Motoru çalıştır ve tüm hamleleri bul
+        hamleler = self.motor.hamle_bul(tahta_matrisi, kucuk_el)
+
+        # 3. API sadece "En İyi 1 Hamleyi" ve Puanını bekliyor, onu ayıkla ve gönder
+        if hamleler and len(hamleler) > 0:
+            en_iyi = hamleler[0]
+            return en_iyi, en_iyi['puan']
+
+        return None, 0
