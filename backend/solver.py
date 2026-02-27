@@ -387,30 +387,26 @@ class KelimeAgaci:
             
         return toplam_puan
 
-# --- API VE ÇÖZÜCÜ ARASINDAKİ KÖPRÜ ---
-class KelimelikSolver:
-    def __init__(self):
-        self.motor = KelimeAgaci()
-        # Sunucudaki sözlük dosyasını otomatik bul ve yükle
-        olasi_yollar = [
-            "sozluk.txt", "kelimeler.txt", "turkce_kelimeler.txt",
-            "backend/sozluk.txt", "backend/kelimeler.txt", "backend/turkce_kelimeler.txt"
-        ]
-        for yol in olasi_yollar:
-            if os.path.exists(yol):
-                self.motor.veriyi_yukle(yol)
+# --- ORİJİNAL MOTOR BAŞLATMA ---
+motor = KelimeAgaci()
+
+# Sözlük dosyasını otomatik bul ve garanti altına al
+import os
+_aranan_sozlukler = ["sozluk.txt", "kelimeler.txt", "turkce_kelimeler.txt"]
+_sozluk_yuklendi = False
+
+# Render'da klasör yapıları değişebileceği için tüm ihtimalleri tarıyoruz
+for klasor in ["", "backend/", "../"]:
+    for dosya in _aranan_sozlukler:
+        yol = os.path.join(klasor, dosya)
+        if os.path.exists(yol):
+            print(f"Sözlük bulundu: {yol}")
+            basari = motor.veriyi_yukle(yol)
+            if basari:
+                _sozluk_yuklendi = True
                 break
+    if _sozluk_yuklendi:
+        break
 
-    def en_iyi_hamleyi_bul(self, tahta_matrisi, el_harfleri):
-        # 1. API'den gelen BÜYÜK harfleri motorun anladığı küçük harfe çevir
-        kucuk_el = turkce_kucult(el_harfleri).replace(" ", "")
-
-        # 2. Motoru çalıştır ve tüm hamleleri bul
-        hamleler = self.motor.hamle_bul(tahta_matrisi, kucuk_el)
-
-        # 3. API sadece "En İyi 1 Hamleyi" ve Puanını bekliyor, onu ayıkla ve gönder
-        if hamleler and len(hamleler) > 0:
-            en_iyi = hamleler[0]
-            return en_iyi, en_iyi['puan']
-
-        return None, 0
+if not _sozluk_yuklendi:
+    print("!!! KRİTİK HATA: SÖZLÜK DOSYASI BULUNAMADI, KELİME ÜRETİLEMEZ !!!")

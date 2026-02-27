@@ -5,7 +5,8 @@ import numpy as np
 
 # Senin kendi orijinal okuma dosyandan fonksiyonları alıyoruz
 from tahta_v11_final import tahtayi_oku, eldeki_harfleri_oku
-from solver import KelimelikSolver
+# Doğrudan orijinal motoru içeri aktarıyoruz!
+from solver import motor 
 
 app = FastAPI()
 
@@ -17,8 +18,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-solver = KelimelikSolver()
-
 @app.post("/resim-coz")
 async def coz(file: UploadFile = File(...)):
     try:
@@ -27,11 +26,11 @@ async def coz(file: UploadFile = File(...)):
         nparr = np.frombuffer(contents, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
-        # 2. Tahtayı ve Eli Oku (Senin orijinal fonksiyonların)
+        # 2. Tahtayı ve Eli Oku
         tahta_matrisi, _ = tahtayi_oku(img)
         el_harfleri_str = eldeki_harfleri_oku(img)
 
-        # Eğer harf okuyamadıysa boş liste dön (Flutter tarafında 'hamle bulunamadı' yazar)
+        # Eğer harf okuyamadıysa boş liste dön
         if not el_harfleri_str:
             return {
                 "durum": "hamle_yok",
@@ -39,10 +38,11 @@ async def coz(file: UploadFile = File(...)):
                 "el_harfleri": []
             }
 
-        # 3. Çözücüyü Çalıştır ve Tüm Listeyi Al
+        # 3. Çözücüyü Çalıştır (Doğrudan motor objesiyle)
         el_temiz = el_harfleri_str.lower().replace(" ", "")
-        hamleler = solver.motor.hamle_bul(tahta_matrisi, el_temiz)
+        hamleler = motor.hamle_bul(tahta_matrisi, el_temiz)
 
+        # Eğer sözlük boşsa veya gerçekten kelime yoksa
         if not hamleler:
             return {
                 "durum": "hamle_yok",
@@ -53,8 +53,8 @@ async def coz(file: UploadFile = File(...)):
         # 4. Sonucu Gönder
         return {
             "durum": "basarili",
-            "onerilen_kelimeler": hamleler[:30], # İlk 30 kelimeyi liste olarak gönder
-            "el_harfleri": list(el_harfleri_str) # Harfleri liste olarak gönder
+            "onerilen_kelimeler": hamleler[:30], 
+            "el_harfleri": list(el_harfleri_str)
         }
 
     except Exception as e:
@@ -62,4 +62,4 @@ async def coz(file: UploadFile = File(...)):
 
 @app.get("/")
 def read_root():
-    return {"durum": "Hazır", "versiyon": "v1.0 (Orijinal Sistem)"}
+    return {"durum": "Hazır", "versiyon": "v1.0 (Saf Orijinal Motor)"}
