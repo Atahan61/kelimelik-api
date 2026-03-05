@@ -16,55 +16,56 @@ def eldeki_harfleri_oku_guvenli(img):
 
     h, w, _ = img.shape
     
-    # Ekranın alt %30'unu al (Yeşil butonları vs. de kapsasa sorun değil, lazerle ayıklayacağız)
-    y_bas = int(h * 0.70)
-    el_resmi = img[y_bas:h, 0:w]
-    eh, ew, _ = el_resmi.shape
-    slot_w = ew / 7.0 
+    # Ekranın alt %40'ını garanti olarak al
+    y_bas = int(h * 0.60)
+    alt_kisim = img[y_bas:h, 0:w]
+    
+    # Sarı/Ahşap renk filtresi
+    alt_sinir = np.array([9, 75, 0])
+    ust_sinir = np.array([179, 255, 252])
+
+    hsv = cv2.cvtColor(alt_kisim, cv2.COLOR_BGR2HSV)
+    maske = cv2.inRange(hsv, alt_sinir, ust_sinir)
+
+    # --- TOPLU LAZER KESİM ---
+    # Taşları tek tek ezmek yerine, taşların olduğu YATAY ŞERİDİ buluyoruz
+    coords = cv2.findNonZero(maske)
+    if coords is None:
+        return ""
+
+    x, y, w_box, h_box = cv2.boundingRect(coords)
+
+    # Şeridi kes (Bu sayede butonlar ve siyah çubuklar çöpe gider, taşlar kare kalır!)
+    rack_strip = alt_kisim[y:y+h_box, 0:w]
+    sh, sw, _ = rack_strip.shape
+    slot_w = sw / 7.0 
 
     okunan_harfler = ""
     tr_harita = {"oz": "ö", "ch": "ç", "sh": "ş", "ue": "ü", "gh": "ğ", "iu": "ı", "i": "i"}
 
-    # Sadece sarı/ahşap Kelimelik taşlarını arayan filtre
-    alt_sinir = np.array([9, 75, 0])
-    ust_sinir = np.array([179, 255, 252])
-
     for i in range(7):
         x1 = int(i * slot_w)
         x2 = int((i + 1) * slot_w)
-        margin = int(slot_w * 0.05)
-        hucre = el_resmi[0:eh, x1+margin:x2-margin]
+        margin = int(slot_w * 0.08) # Taşların kenarındaki ince boşluğu atla
         
+        hucre = rack_strip[0:sh, x1+margin:x2-margin]
         if hucre.size == 0: continue
 
-        hsv = cv2.cvtColor(hucre, cv2.COLOR_BGR2HSV)
-        maske = cv2.inRange(hsv, alt_sinir, ust_sinir)
+        # Bu hücrede cidden sarı taş var mı? (Belki boşluktur)
+        h_hsv = cv2.cvtColor(hucre, cv2.COLOR_BGR2HSV)
+        h_maske = cv2.inRange(h_hsv, alt_sinir, ust_sinir)
         
-        # Eğer bu sütunda sarı bir taş varsa...
-        if cv2.countNonZero(maske) > (hucre.size * 0.02):
+        if cv2.countNonZero(h_maske) > (hucre.size * 0.15):
+            # Taş var, harfi oku! Oran bozulmadığı için şak diye tanıyacak.
+            harf, skor = en_iyi_eslesmeyi_bul(hucre, referanslar)
             
-            # --- LAZER KESİM: Sadece taşın olduğu kareyi bul ---
-            coords = cv2.findNonZero(maske)
-            if coords is not None:
-                x, y, w_box, h_box = cv2.boundingRect(coords)
-                
-                # Çok minik parazitleri yoksay
-                if w_box < 20 or h_box < 20:
-                    continue
-                    
-                # Taşı sıfıra sıfır, tam sınırlarından kes (Ezilme engellendi!)
-                kusursuz_tas = hucre[y:y+h_box, x:x+w_box]
-                
-                harf, skor = en_iyi_eslesmeyi_bul(kusursuz_tas, referanslar)
-                
-                if harf != "?":
-                    temiz_harf = harf.split("_")[0] if "_" in harf else harf
-                    final_harf = tr_harita.get(temiz_harf, temiz_harf)
-                    okunan_harfler += final_harf.upper()
-                else:
-                    # ZEKİCE BİR DOKUNUŞ: Ekranda büyük bir sarı taş var ama üzerinde harf yoksa, 
-                    # bu fotoğraftaki gibi %100 JOKER'dir!
-                    okunan_harfler += "*"
+            if harf != "?":
+                temiz_harf = harf.split("_")[0] if "_" in harf else harf
+                final_harf = tr_harita.get(temiz_harf, temiz_harf)
+                okunan_harfler += final_harf.upper()
+            else:
+                # Sapsarı bir taş var ama harf yok (Gerçek JOKER!)
+                okunan_harfler += "*"
     
     return okunan_harfler
 
