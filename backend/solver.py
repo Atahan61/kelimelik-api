@@ -387,5 +387,29 @@ class KelimeAgaci:
             
         return toplam_puan
 
+import os
+
 # Motoru başlat
 motor = KelimeAgaci()
+
+# Sözlüğü bul ve yükle
+mevcut_klasor = os.path.dirname(os.path.abspath(__file__))
+aranan_sozlukler = ["dictionary.txt", "sozluk.txt", "kelimeler.txt", "turkce_kelimeler.txt"]
+sozluk_yuklendi = False
+
+# 1. Aynı klasörde ara (backend klasörü)
+for dosya in aranan_sozlukler:
+    tam_yol = os.path.join(mevcut_klasor, dosya)
+    if os.path.exists(tam_yol):
+        motor.veriyi_yukle(tam_yol)
+        sozluk_yuklendi = True
+        break
+
+# 2. Bulamazsa bir üst klasörde ara (ana dizin)
+if not sozluk_yuklendi:
+    ust_klasor = os.path.dirname(mevcut_klasor)
+    for dosya in aranan_sozlukler:
+        tam_yol = os.path.join(ust_klasor, dosya)
+        if os.path.exists(tam_yol):
+            motor.veriyi_yukle(tam_yol)
+            break
