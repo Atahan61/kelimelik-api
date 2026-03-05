@@ -91,7 +91,18 @@ async def coz(file: UploadFile = File(...)):
         hamleler = motor.hamle_bul(tahta_matrisi, el_temiz)
 
         if not hamleler:
-            return {"durum": "hamle_yok", "onerilen_kelimeler": [], "el_harfleri": list(el_harfleri_str)}
+            # TAHTADA KAÇ KARE DOLU GÖRDÜĞÜNÜ SAY
+            dolu_kare = sum(1 for satir in tahta_matrisi for hucre in satir if hucre is not None and str(hucre) != "?")
+            
+            # SONUCU TELEFONUN EKRANINA KELİME GİBİ YAZDIR
+            return {
+                "durum": "basarili", 
+                "onerilen_kelimeler": [
+                    {"kelime": f"SOZLUK{motor.kelime_sayisi}", "puan": motor.kelime_sayisi, "baslangic": [7,7], "yon": "Yatay", "jokerler": []},
+                    {"kelime": f"TAHTA{dolu_kare}", "puan": dolu_kare, "baslangic": [8,7], "yon": "Yatay", "jokerler": []}
+                ], 
+                "el_harfleri": list(el_harfleri_str)
+            }
 
         return {"durum": "basarili", "onerilen_kelimeler": hamleler[:30], "el_harfleri": list(el_harfleri_str)}
 
