@@ -35,7 +35,7 @@ def eldeki_harfleri_oku_guvenli(img):
     maske = cv2.inRange(hsv, np.array([9, 75, 0]), np.array([179, 255, 252]))
 
     okunan_harfler = ""
-    tr_harita = {"oz": "ö", "ch": "ç", "sh": "ş", "ue": "ü", "gh": "ğ", "iu": "ı", "i": "i"}
+    tr_harita = {"oz": "ö", "ch": "ç", "sh": "ş", "ue": "ü", "gh": "ğ", "iu": "ı", "i": "i", "joker": "*", "yildiz": "*"}
 
     for i in range(7):
         x1 = int(i * slot_w)
