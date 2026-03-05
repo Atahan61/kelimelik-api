@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import cv2
 import numpy as np
 
+# Orijinal dosyandan gerekli parçaları alıyoruz
 from tahta_v11_final import tahtayi_oku, referanslari_yukle, en_iyi_eslesmeyi_bul
 from solver import motor 
 
@@ -11,34 +12,27 @@ app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 def eldeki_harfleri_oku_guvenli(img):
+    """
+    Senin el_ref_toplayici.py dosyanın BİREBİR aynısı olan kesim mantığı!
+    Referanslar bu matematiğe göre toplandığı için %100 eşleşme sağlar.
+    """
     referanslar = referanslari_yukle()
     if not referanslar: return ""
 
     h, w, _ = img.shape
     
-    # Ekranın alt %40'ını garanti olarak al
-    y_bas = int(h * 0.60)
-    alt_kisim = img[y_bas:h, 0:w]
-    
-    # Sarı/Ahşap renk filtresi
-    alt_sinir = np.array([9, 75, 0])
-    ust_sinir = np.array([179, 255, 252])
+    # SENİN BULDUĞUN MÜKEMMEL ORANLAR
+    Y_BAS_ORAN = 0.756
+    Y_BIT_ORAN = 0.825
+    X_BAS_ORAN = 0.025
+    X_BIT_ORAN = 0.975
 
-    hsv = cv2.cvtColor(alt_kisim, cv2.COLOR_BGR2HSV)
-    maske = cv2.inRange(hsv, alt_sinir, ust_sinir)
+    el_bolgesi = img[int(h*Y_BAS_ORAN):int(h*Y_BIT_ORAN), int(w*X_BAS_ORAN):int(w*X_BIT_ORAN)]
+    h_el, w_el, _ = el_bolgesi.shape
+    slot_w = w_el / 7.0
 
-    # --- TOPLU LAZER KESİM ---
-    # Taşları tek tek ezmek yerine, taşların olduğu YATAY ŞERİDİ buluyoruz
-    coords = cv2.findNonZero(maske)
-    if coords is None:
-        return ""
-
-    x, y, w_box, h_box = cv2.boundingRect(coords)
-
-    # Şeridi kes (Bu sayede butonlar ve siyah çubuklar çöpe gider, taşlar kare kalır!)
-    rack_strip = alt_kisim[y:y+h_box, 0:w]
-    sh, sw, _ = rack_strip.shape
-    slot_w = sw / 7.0 
+    hsv = cv2.cvtColor(el_bolgesi, cv2.COLOR_BGR2HSV)
+    maske = cv2.inRange(hsv, np.array([9, 75, 0]), np.array([179, 255, 252]))
 
     okunan_harfler = ""
     tr_harita = {"oz": "ö", "ch": "ç", "sh": "ş", "ue": "ü", "gh": "ğ", "iu": "ı", "i": "i"}
@@ -46,28 +40,34 @@ def eldeki_harfleri_oku_guvenli(img):
     for i in range(7):
         x1 = int(i * slot_w)
         x2 = int((i + 1) * slot_w)
-        margin = int(slot_w * 0.08) # Taşların kenarındaki ince boşluğu atla
+        slot_maske = maske[:, x1:x2]
         
-        hucre = rack_strip[0:sh, x1+margin:x2-margin]
-        if hucre.size == 0: continue
-
-        # Bu hücrede cidden sarı taş var mı? (Belki boşluktur)
-        h_hsv = cv2.cvtColor(hucre, cv2.COLOR_BGR2HSV)
-        h_maske = cv2.inRange(h_hsv, alt_sinir, ust_sinir)
-        
-        if cv2.countNonZero(h_maske) > (hucre.size * 0.15):
-            # Taş var, harfi oku! Oran bozulmadığı için şak diye tanıyacak.
-            harf, skor = en_iyi_eslesmeyi_bul(hucre, referanslar)
-            
-            if harf != "?":
-                temiz_harf = harf.split("_")[0] if "_" in harf else harf
-                final_harf = tr_harita.get(temiz_harf, temiz_harf)
-                okunan_harfler += final_harf.upper()
-            else:
-                # Sapsarı bir taş var ama harf yok (Gerçek JOKER!)
-                okunan_harfler += "*"
-    
+        # Senin belirlediğin %30 barajı
+        if cv2.countNonZero(slot_maske) > (slot_maske.size * 0.30):
+            points = cv2.findNonZero(slot_maske)
+            if points is not None:
+                x, y, w_h, h_h = cv2.boundingRect(points)
+                
+                # MÜKEMMEL KESİM (Boşlukları at, sadece taşı al)
+                slot_crop = el_bolgesi[y:y+h_h, x1+x:x1+x+w_h]
+                
+                # Senin kodundaki gibi griye çevir ve 60x60 yap (Referanslarla birebir aynı form)
+                gri_crop = cv2.cvtColor(slot_crop, cv2.COLOR_BGR2GRAY)
+                kucuk_crop = cv2.resize(gri_crop, (60, 60))
+                
+                # Artık referanslarla karşılaştırabiliriz
+                harf, skor = en_iyi_eslesmeyi_bul(kucuk_crop, referanslar)
+                
+                if harf != "?":
+                    temiz_harf = harf.split("_")[0] if "_" in harf else harf
+                    final_harf = tr_harita.get(temiz_harf, temiz_harf)
+                    okunan_harfler += final_harf.upper()
+                else:
+                    # %30'dan fazla sarı var ama harf tanınmadı = Gerçek JOKER!
+                    okunan_harfler += "*"
+                    
     return okunan_harfler
+
 
 @app.post("/resim-coz")
 async def coz(file: UploadFile = File(...)):
