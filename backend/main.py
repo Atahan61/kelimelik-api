@@ -95,7 +95,7 @@ async def coz(file: UploadFile = File(...), manuel_el: str = Form(None)):
             return {"durum": "hamle_yok", "onerilen_kelimeler": [], "el_harfleri": []}
 
         # Çözücü
-        el_temiz = el_harfleri_str.lower().replace(" ", "")
+        el_temiz = el_harfleri_str.replace("I", "ı").replace("İ", "i").lower().replace(" ", "")
         hamleler = motor.hamle_bul(tahta_matrisi, el_temiz)
 
         if not hamleler:
