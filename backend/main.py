@@ -1,5 +1,6 @@
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, File, UploadFile, Form
 import cv2
 import numpy as np
 
@@ -70,19 +71,26 @@ def eldeki_harfleri_oku_guvenli(img):
 
 
 @app.post("/resim-coz")
-async def coz(file: UploadFile = File(...)):
+async def coz(file: UploadFile = File(...), manuel_el: str = Form(None)):
     try:
         contents = await file.read()
         nparr = np.frombuffer(contents, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
         tahta_matrisi, _ = tahtayi_oku(img)
-        el_harfleri_str = eldeki_harfleri_oku_guvenli(img)
 
-        # Hata kontrolleri
+        # Hata kontrolü 1: Tahta
         if not tahta_matrisi or len(tahta_matrisi) == 0:
             return {"durum": "hamle_yok", "onerilen_kelimeler": [], "el_harfleri": []}
 
+        # ZEKİCE DOKUNUŞ: Eğer kullanıcı harfleri elle değiştirdiyse (manuel_el doluysa) onu kullan, 
+        # yoksa resmi okumaya çalış.
+        if manuel_el:
+            el_harfleri_str = manuel_el
+        else:
+            el_harfleri_str = eldeki_harfleri_oku_guvenli(img)
+
+        # Hata kontrolü 2: El
         if not el_harfleri_str:
             return {"durum": "hamle_yok", "onerilen_kelimeler": [], "el_harfleri": []}
 
@@ -91,20 +99,9 @@ async def coz(file: UploadFile = File(...)):
         hamleler = motor.hamle_bul(tahta_matrisi, el_temiz)
 
         if not hamleler:
-            # TAHTADA KAÇ KARE DOLU GÖRDÜĞÜNÜ SAY
-            dolu_kare = sum(1 for satir in tahta_matrisi for hucre in satir if hucre is not None and str(hucre) != "?")
-            
-            # SONUCU TELEFONUN EKRANINA KELİME GİBİ YAZDIR
-            return {
-                "durum": "basarili", 
-                "onerilen_kelimeler": [
-                    {"kelime": f"SOZLUK{motor.kelime_sayisi}", "puan": motor.kelime_sayisi, "baslangic": [7,7], "yon": "Yatay", "jokerler": []},
-                    {"kelime": f"TAHTA{dolu_kare}", "puan": dolu_kare, "baslangic": [8,7], "yon": "Yatay", "jokerler": []}
-                ], 
-                "el_harfleri": list(el_harfleri_str)
-            }
+            return {"durum": "hamle_yok", "onerilen_kelimeler": [], "el_harfleri": list(el_harfleri_str.upper())}
 
-        return {"durum": "basarili", "onerilen_kelimeler": hamleler[:30], "el_harfleri": list(el_harfleri_str)}
+        return {"durum": "basarili", "onerilen_kelimeler": hamleler[:30], "el_harfleri": list(el_harfleri_str.upper())}
 
     except Exception as e:
         return {"durum": "hata", "mesaj": str(e)}
